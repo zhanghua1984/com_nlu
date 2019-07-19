@@ -57,6 +57,9 @@
     <ClInclude Include="json\writer.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="zlib.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="NLU.cpp">

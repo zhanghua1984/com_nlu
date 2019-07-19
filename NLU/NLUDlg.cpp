@@ -20,7 +20,7 @@ extern CWinThread* pThreadRX;
 extern CWinThread* pThreadTX;
 extern BOOL	m_bThreadRXrunning;
 extern BOOL	m_bThreadTXrunning;
-
+extern BOOL m_bDealFinish;
 extern BYTE	m_byteRXFrame[BUFFERLENTH];
 
 CString m_strgfilepath;
@@ -59,15 +59,15 @@ class CAboutDlg : public CDialogEx
 public:
 	CAboutDlg();
 
-// 对话框数据
+	// 对话框数据
 #ifdef AFX_DESIGN_TIME
 	enum { IDD = IDD_ABOUTBOX };
 #endif
 
-	protected:
+protected:
 	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV 支持
 
-// 实现
+	// 实现
 protected:
 	DECLARE_MESSAGE_MAP()
 };
@@ -90,7 +90,7 @@ END_MESSAGE_MAP()
 
 
 CNLUDlg::CNLUDlg(CWnd* pParent /*=nullptr*/)
-	: CDialogEx(IDD_NLU_DIALOG, pParent)
+: CDialogEx(IDD_NLU_DIALOG, pParent)
 {
 	m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 }
@@ -108,6 +108,10 @@ void CNLUDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Control(pDX, IDC_RICHEDIT2_RX_RESULT, m_richeditctrl_result);
 	DDX_Control(pDX, IDC_RICHEDIT2_RX_INTENT, m_richedit_rx_intent);
 	DDX_Control(pDX, IDC_RICHEDIT2_RX_VALUE, m_richeditctrl_rx_value);
+	DDX_Control(pDX, IDC_CHECK_HEX, m_button_check);
+	DDX_Control(pDX, IDC_RICHEDIT2_INPUTJSON, m_richedit_inputjson);
+	DDX_Control(pDX, IDC_EDIT_JSON_SEND_TIMER, m_edit_json_send_time);
+	DDX_Control(pDX, IDC_CHECK_JSON_SEND_TIMER, m_button_set_timer);
 }
 
 BEGIN_MESSAGE_MAP(CNLUDlg, CDialogEx)
@@ -121,6 +125,10 @@ BEGIN_MESSAGE_MAP(CNLUDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BUTTON_LOOP_TEST, &CNLUDlg::OnBnClickedButtonLoopTest)
 	ON_BN_CLICKED(IDC_BUTTON_ALL_CLEAR, &CNLUDlg::OnBnClickedButtonAllClear)
 	ON_WM_TIMER()
+	ON_BN_CLICKED(IDC_BUTTON_TEST, &CNLUDlg::OnBnClickedButtonTest)
+	ON_BN_CLICKED(IDC_CHECK_HEX, &CNLUDlg::OnBnClickedCheckHex)
+	ON_BN_CLICKED(IDC_BUTTON_JSON, &CNLUDlg::OnBnClickedButtonJson)
+	ON_BN_CLICKED(IDC_CHECK_JSON_SEND_TIMER, &CNLUDlg::OnBnClickedCheckJsonSendTimer)
 END_MESSAGE_MAP()
 
 
@@ -156,7 +164,7 @@ BOOL CNLUDlg::OnInitDialog()
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
 	// TODO: 在此添加额外的初始化代码
-
+	/*
 	VERIFY(font.CreateFont(
 		24,                        // nHeight
 		0,                         // nWidth
@@ -181,8 +189,8 @@ BOOL CNLUDlg::OnInitDialog()
 	cWnd->SetFont(&font);
 	cWnd = GetDlgItem(IDC_STATIC_KEY);
 	cWnd->SetFont(&font);
-
-
+	*/
+	//ShowWindow(SW_SHOWMAXIMIZED);
 	Initialization();
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
@@ -241,13 +249,83 @@ void CNLUDlg::Initialization()
 	m_comport.InitPort();
 	m_bConnection = FALSE;
 	m_bReady = FALSE;
-	m_bWorking = FALSE;	
+	m_bWorking = FALSE;
 	m_bHighSpeed = FALSE;
 	m_ncountersecond = 0;
 	m_edit_wakeup.SetFont(&font);
-	m_edit_wakeup.SetWindowTextW(_T("未检测到人脸"));
+	m_edit_wakeup.SetWindowTextA(("未检测到人脸"));
+	m_edit_json_send_time.SetWindowTextA(("10000"));
+	SetTimer(1, 1000 * 60, NULL);
+}
+/* Compress gzip data */
+/* data 原数据 ndata 原数据长度 zdata 压缩后数据 nzdata 压缩后长度 */
+int  gzcompress(Bytef *data, uLong ndata, Bytef *zdata, uLong *nzdata)
+{
+	z_stream c_stream;
+	int  err = 0;
 
-	SetTimer(1, 1000*60, NULL);
+	if (data && ndata > 0) {
+		c_stream.zalloc = NULL;
+		c_stream.zfree = NULL;
+		c_stream.opaque = NULL;
+		//只有设置为MAX_WBITS + 16才能在在压缩文本中带header和trailer  
+		if (deflateInit2(&c_stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED,
+			MAX_WBITS + 16, 8, Z_DEFAULT_STRATEGY) != Z_OK)  return  -1;
+		c_stream.next_in = data;
+		c_stream.avail_in = ndata;
+		c_stream.next_out = zdata;
+		c_stream.avail_out = *nzdata;
+		while (c_stream.avail_in != 0 && c_stream.total_out < *nzdata) {
+			if (deflate(&c_stream, Z_NO_FLUSH) != Z_OK)  return  -1;
+		}
+		if (c_stream.avail_in != 0)  return  c_stream.avail_in;
+		for (;;) {
+			if ((err = deflate(&c_stream, Z_FINISH)) == Z_STREAM_END)  break;
+			if (err != Z_OK)  return  -1;
+		}
+		if (deflateEnd(&c_stream) != Z_OK)  return  -1;
+		*nzdata = c_stream.total_out;
+		return  0;
+	}
+	return  -1;
+}
+
+/* Uncompress gzip data */
+/* zdata 数据 nzdata 原数据长度 data 解压后数据 ndata 解压后长度 */
+int  gzdecompress(Byte *zdata, uLong nzdata, Byte *data, uLong *ndata)
+{
+	int  err = 0;
+	z_stream d_stream = { 0 };  /* decompression stream */
+	static   char  dummy_head[2] = {
+		0x8 + 0x7 * 0x10,
+		(((0x8 + 0x7 * 0x10) * 0x100 + 30) / 31 * 31) & 0xFF,
+	};
+	d_stream.zalloc = NULL;
+	d_stream.zfree = NULL;
+	d_stream.opaque = NULL;
+	d_stream.next_in = zdata;
+	d_stream.avail_in = 0;
+	d_stream.next_out = data;
+	//只有设置为MAX_WBITS + 16才能在解压带header和trailer的文本  
+	if (inflateInit2(&d_stream, MAX_WBITS + 16) != Z_OK)  return  -1;
+	//if(inflateInit2(&d_stream, 47) != Z_OK) return -1;  
+	while (d_stream.total_out < *ndata && d_stream.total_in < nzdata) {
+		d_stream.avail_in = d_stream.avail_out = 1;  /* force small buffers */
+		if ((err = inflate(&d_stream, Z_NO_FLUSH)) == Z_STREAM_END)  break;
+		if (err != Z_OK) {
+			if (err == Z_DATA_ERROR) {
+				d_stream.next_in = (Bytef*)dummy_head;
+				d_stream.avail_in = sizeof (dummy_head);
+				if ((err = inflate(&d_stream, Z_NO_FLUSH)) != Z_OK) {
+					return  -1;
+				}
+			}
+			else   return  -1;
+		}
+	}
+	if (inflateEnd(&d_stream) != Z_OK)  return  -1;
+	*ndata = d_stream.total_out;
+	return  0;
 }
 
 LRESULT CNLUDlg::OnReceiveAComPort(WPARAM wParam, LPARAM lParam)
@@ -268,18 +346,18 @@ void CNLUDlg::OnBnClickedButtonCom()
 	{
 
 		CString m_strsel;
-		m_combo_com_num.GetWindowTextW(m_strsel);
+		m_combo_com_num.GetWindowTextA(m_strsel);
 		m_strsel.Delete(0, 3);
 
 		if (m_comport.OpenPort(_ttoi(m_strsel)))
 		{
 			m_bConnection = TRUE;
-			m_bn_com.SetWindowText(_T("关闭串口"));
+			m_bn_com.SetWindowText(("关闭串口"));
 		}
 		else
 		{
 			m_bConnection = FALSE;
-			m_bn_com.SetWindowText(_T("打开串口"));
+			m_bn_com.SetWindowText(("打开串口"));
 
 		}
 	}
@@ -287,7 +365,7 @@ void CNLUDlg::OnBnClickedButtonCom()
 	{
 		//OnSelchangeCombocomportnumber();	//�رյ�ǰ���ں��߳�
 		m_bConnection = FALSE;
-		m_bn_com.SetWindowText(_T("打开串口"));
+		m_bn_com.SetWindowText(("打开串口"));
 		m_comport.CloseComPort();
 	}
 }
@@ -298,13 +376,13 @@ void CNLUDlg::OnBnClickedButtonLoopTest()
 	// TODO: 在此添加控件通知处理程序代码
 	if (m_bConnection == FALSE)
 	{
-		AfxMessageBox(_T("串口未打开"));
-		return ;
+		AfxMessageBox(("串口未打开"));
+		return;
 	}
 	//获取输入字符串
 	CString m_strtemp;
-	m_unSendLenth =0;
-	m_richeditctrl_input.GetWindowTextW(m_strtemp);
+	m_unSendLenth = 0;
+	m_richeditctrl_input.GetWindowTextA(m_strtemp);
 
 	while (!m_strtemp.IsEmpty())
 	{
@@ -316,7 +394,7 @@ void CNLUDlg::OnBnClickedButtonLoopTest()
 		else
 		{
 			//取左边2个字符，转成16进制数后删除
-			m_byteWriteFrame1[m_unSendLenth++]= wcstol(m_strtemp.Left(2), NULL, 16);
+			m_byteWriteFrame1[m_unSendLenth++] = strtoul(m_strtemp.Left(2), NULL, 16);
 			m_strtemp.Delete(0, 2);
 		}
 	}
@@ -327,55 +405,56 @@ void CNLUDlg::OnBnClickedButtonLoopTest()
 //UTF8转ANSI
 void UTF8toANSI(CString &strUTF8)
 {
-	//获取转换为多字节后需要的缓冲区大小，创建多字节缓冲区
-	UINT nLen = MultiByteToWideChar(CP_UTF8, NULL, strUTF8, -1, NULL, NULL);
-	WCHAR *wszBuffer = new WCHAR[nLen + 1];
-	nLen = MultiByteToWideChar(CP_UTF8, NULL, strUTF8, -1, wszBuffer, nLen);
-	wszBuffer[nLen] = 0;
+//获取转换为多字节后需要的缓冲区大小，创建多字节缓冲区
+UINT nLen = MultiByteToWideChar(CP_UTF8, NULL, strUTF8, -1, NULL, NULL);
+WCHAR *wszBuffer = new WCHAR[nLen + 1];
+nLen = MultiByteToWideChar(CP_UTF8, NULL, strUTF8, -1, wszBuffer, nLen);
+wszBuffer[nLen] = 0;
 
-	nLen = WideCharToMultiByte(936, NULL, wszBuffer, -1, NULL, NULL, NULL, NULL);
-	CHAR *szBuffer = new CHAR[nLen + 1];
-	nLen = WideCharToMultiByte(936, NULL, wszBuffer, -1, szBuffer, nLen, NULL, NULL);
-	szBuffer[nLen] = 0;
-	strUTF8 = szBuffer;
-	//清理内存
-	delete[]szBuffer;
-	delete[]wszBuffer;
+nLen = WideCharToMultiByte(936, NULL, wszBuffer, -1, NULL, NULL, NULL, NULL);
+CHAR *szBuffer = new CHAR[nLen + 1];
+nLen = WideCharToMultiByte(936, NULL, wszBuffer, -1, szBuffer, nLen, NULL, NULL);
+szBuffer[nLen] = 0;
+strUTF8 = szBuffer;
+//清理内存
+delete[]szBuffer;
+delete[]wszBuffer;
 }
 //ANSI转UTF8
 void ANSItoUTF8(CString &strAnsi)
 {
-	//获取转换为宽字节后需要的缓冲区大小，创建宽字节缓冲区，936为简体中文GB2312代码页
-	UINT nLen = MultiByteToWideChar(936, NULL, (LPCCH)strAnsi, -1, NULL, NULL);
-	WCHAR *wszBuffer = new WCHAR[nLen + 1];
-	nLen = MultiByteToWideChar(936, NULL, strAnsi, -1, wszBuffer, nLen);
-	wszBuffer[nLen] = 0;
-	//获取转为UTF8多字节后需要的缓冲区大小，创建多字节缓冲区
-	nLen = WideCharToMultiByte(CP_UTF8, NULL, wszBuffer, -1, NULL, NULL, NULL, NULL);
-	CHAR *szBuffer = new CHAR[nLen + 1];
-	nLen = WideCharToMultiByte(CP_UTF8, NULL, wszBuffer, -1, szBuffer, nLen, NULL, NULL);
-	szBuffer[nLen] = 0;
-	strAnsi = szBuffer;
-	//内存清理
-	delete[]wszBuffer;
-	delete[]szBuffer;
+//获取转换为宽字节后需要的缓冲区大小，创建宽字节缓冲区，936为简体中文GB2312代码页
+UINT nLen = MultiByteToWideChar(936, NULL, (LPCCH)strAnsi, -1, NULL, NULL);
+WCHAR *wszBuffer = new WCHAR[nLen + 1];
+nLen = MultiByteToWideChar(936, NULL, strAnsi, -1, wszBuffer, nLen);
+wszBuffer[nLen] = 0;
+//获取转为UTF8多字节后需要的缓冲区大小，创建多字节缓冲区
+nLen = WideCharToMultiByte(CP_UTF8, NULL, wszBuffer, -1, NULL, NULL, NULL, NULL);
+CHAR *szBuffer = new CHAR[nLen + 1];
+nLen = WideCharToMultiByte(CP_UTF8, NULL, wszBuffer, -1, szBuffer, nLen, NULL, NULL);
+szBuffer[nLen] = 0;
+strAnsi = szBuffer;
+//内存清理
+delete[]wszBuffer;
+delete[]szBuffer;
 }
 */
 /*
 int UniToUTF8(CString strUnicode, char *szUtf8)
 {
-	//MessageBox(strUnicode);  
-	int ilen = WideCharToMultiByte(CP_UTF8, 0, (LPCTSTR)strUnicode, -1, NULL, 0, NULL, NULL);
-	char *szUtf8Temp = new char[ilen + 1];
-	memset(szUtf8Temp, 0, ilen + 1);
-	WideCharToMultiByte(CP_UTF8, 0, (LPCTSTR)strUnicode, -1, szUtf8Temp, ilen, NULL, NULL);
-	//size_t a = strlen(szUtf8Temp);  
-	
-	//printf(szUtf8, "%s", szUtf8Temp);//   
-	delete[] szUtf8Temp;
-	return ilen;
+//MessageBox(strUnicode);
+int ilen = WideCharToMultiByte(CP_UTF8, 0, (LPCTSTR)strUnicode, -1, NULL, 0, NULL, NULL);
+char *szUtf8Temp = new char[ilen + 1];
+memset(szUtf8Temp, 0, ilen + 1);
+WideCharToMultiByte(CP_UTF8, 0, (LPCTSTR)strUnicode, -1, szUtf8Temp, ilen, NULL, NULL);
+//size_t a = strlen(szUtf8Temp);
+
+//printf(szUtf8, "%s", szUtf8Temp);//
+delete[] szUtf8Temp;
+return ilen;
 }
 */
+/*
 int UniToUTF8(LPCTSTR strUnicode, char *szUtf8)
 {
 	//MessageBox(strUnicode);  
@@ -389,6 +468,7 @@ int UniToUTF8(LPCTSTR strUnicode, char *szUtf8)
 	delete[] szUtf8Temp;
 	return ilen;
 }
+*/
 
 LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 {
@@ -398,33 +478,32 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 
 	static int m_snc = 0;
 	m_snc += wParam;
-	CString m_temp,m_strshow;
-
+	CString m_temp, m_strshow;
 
 	/*
 	m_temp = "{\"event\":\"OnWakeup\"}";
 
 	const char *istream = "{\"event\":\"OnWakeup\"}";
 	uLong srcLen = strlen(istream) + 1;      // +1 for the trailing `\0`
-	uLong destLen = compressBound(srcLen); // this is how you should estimate size 
-										   // needed for the buffer
+	uLong destLen = compressBound(srcLen); // this is how you should estimate size
+	// needed for the buffer
 	unsigned char* ostream = (unsigned char*)malloc(destLen);
 	int res = compress(ostream, &destLen, (const unsigned char *)istream, srcLen);
 	for (int i = 0; i < destLen; i++)
 	{
-		m_temp.Format(_T("%02X "), ostream[i]);
-		m_strshow += m_temp;
+	m_temp.Format(_T("%02X "), ostream[i]);
+	m_strshow += m_temp;
 	}
 
 	// destLen is now the size of actuall buffer needed for compression
 	// you don't want to uncompress whole buffer later, just the used part
 	if (res == Z_BUF_ERROR) {
-		printf("Buffer was too small!\n");
-		return 1;
+	printf("Buffer was too small!\n");
+	return 1;
 	}
 	if (res == Z_MEM_ERROR) {
-		printf("Not enough memory for compression!\n");
-		return 2;
+	printf("Not enough memory for compression!\n");
+	return 2;
 	}
 
 	unsigned char *src_stream = ostream;
@@ -432,7 +511,7 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 	uLong undestLen; //destLen is the actual size of the compressed buffer
 	int des = uncompress((unsigned char *)dest_stream, &undestLen, src_stream, destLen);
 	printf("%s\n", dest_stream);
-	
+
 	*/
 	/*
 	uLong srcLen = wParam -8;
@@ -447,25 +526,298 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 
 	}
 	if (des == Z_BUF_ERROR) {
-		printf("Buffer was too small!\n");
-		return 1;
+	printf("Buffer was too small!\n");
+	return 1;
 	}
 	if (des == Z_MEM_ERROR) {
-		printf("Not enough memory for compression!\n");
-		return 2;
+	printf("Not enough memory for compression!\n");
+	return 2;
 	}
-	
+
 	*/
 
 	//数据解析
 
-	char sBuf[BUFFERLENTH] = { 0 };
+	unsigned char sBuf[BUFFERLENTH] = { 0 };
 
 	//std::string m_stroutUTF8 = "";
 	//strcpy(sBuf, "test");
-	memcpy(sBuf, &m_byteRXFrame[7], wParam-8);
-	int nBufSize = strlen(sBuf);
+	memcpy(sBuf, &m_byteRXFrame[7], wParam - 8);
+	int nBufSize = wParam - 8;
+	//数据解压缩
 
+	BYTE* out_stream = (BYTE *)malloc(BUFFERLENTH);
+	memset(out_stream, 0, BUFFERLENTH);
+	uLong m_lLenth;
+	int ret = gzdecompress(sBuf, nBufSize, out_stream, &m_lLenth);
+	if (ret == 0)	//解压成功
+	{
+		// VC++默认使用ANSI，故取第一个参数为CP_ACP
+		DWORD dBufSize = MultiByteToWideChar(CP_UTF8, 0, (LPCSTR)out_stream, m_lLenth, NULL, 0);
+		wchar_t* dBuf = new wchar_t[dBufSize];
+		wmemset(dBuf, 0, dBufSize);
+		int nRet = MultiByteToWideChar(CP_UTF8, 0, (LPCSTR)out_stream, m_lLenth, dBuf, dBufSize);
+		dBuf[dBufSize] = '\0';
+
+		//m_stroutUTF8 = (std::string)dBuf;
+		if (nRet < 0)
+		{
+			printf("转换失败\n");
+			DWORD dwErr = GetLastError();
+			switch (dwErr)
+			{
+			case ERROR_INSUFFICIENT_BUFFER:
+				printf("error insufficient buffer\n");
+				break;
+			case ERROR_INVALID_FLAGS:
+				printf("error invalid flags\n");
+				break;
+			case ERROR_INVALID_PARAMETER:
+				printf("error invalid parameter\n");
+				break;
+			case ERROR_NO_UNICODE_TRANSLATION:
+				printf("error no unicode translation\n");
+				break;
+			}
+		}
+		else
+		{
+			//转换成功 开始解析json串
+			//const char* str = "{\"uploadid\": \"UP000000\",\"code\": 100,\"msg\": \"\",\"files\": \"\"}";
+			m_temp.Format(_T("%s"), dBuf);
+			//wchar_t* p = szAllData.GetBuffer(szAllData.GetLength());
+			DWORD dwNum = WideCharToMultiByte(CP_OEMCP, NULL, dBuf, -1, NULL, 0, NULL, FALSE);
+			char *psText;
+			psText = new char[dwNum];
+			//WideCharToMultiByte的再次运用，进行转换
+			WideCharToMultiByte(CP_OEMCP, NULL, dBuf, -1, psText, dwNum, NULL, FALSE);
+
+
+			//std::string赋值
+			std::string m_str = (char *)psText; //大功告成
+			//psText的清除
+			delete[]psText;
+			psText = NULL;
+			CString m_strResultShow;
+			Json::Reader reader;
+			Json::Value root;
+			int m_size;
+			if (reader.parse(m_str, root))  // reader将Json字符串解析到root，root将包含Json里所有子元素  
+			{
+				std::string m_strevent = root["event"].asString();  // 访问节点
+				//int m_nstatus = root["status"].asInt();		//status = 0 ,表示识别正常，=1 没有识别到结果
+				//std::string m_strparam = root["param"].asString();		// 访问节点
+
+				CString m_strTime;
+				SYSTEMTIME m_st;
+				GetLocalTime(&m_st);
+				m_strTime.Format(_T("时间戳:%2d:%2d:%2d.%3d ::"), m_st.wHour, m_st.wMinute, m_st.wSecond, m_st.wMilliseconds);
+
+				//int code = root["code"].asInt();					// 访问节点
+				//判断event类型
+				if (m_strevent == "OnWakeup")
+				{
+					m_edit_wakeup.SetFont(&font);
+					m_edit_wakeup.SetWindowTextA(("已检测到人脸"));
+					/*
+					m_strResultShow = _T("检测到人脸\r\n");
+					m_richeditctrl_result.SetFont(&font);
+					m_richeditctrl_result.SetSel(-1, -1);
+					m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+					m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+					*/
+				}
+				if (m_strevent == "OnSleep")
+				{
+					m_edit_wakeup.SetFont(&font);
+					m_edit_wakeup.SetWindowTextA(("未检测到人脸"));
+					/*
+					m_strResultShow = _T("未检测到人脸\r\n");
+					m_richeditctrl_result.SetFont(&font);
+					m_richeditctrl_result.SetSel(-1, -1);
+					m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+					m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+					*/
+				}
+				if (m_strevent == "ASR")
+				{
+					//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
+
+					std::string m_strtext = root["param"]["text"].asString();  // 访问节点
+					int m_nfinish = root["param"]["finish"].asInt();
+					//不管是否识别完成全部显示
+					m_strResultShow = m_strtext.c_str();
+					m_strResultShow += _T("\r\n");
+					m_strResultShow.Insert(0, m_strTime);
+					m_richeditctrl_result.SetSel(-1, -1);
+					m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+					//m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+					m_richeditctrl_result.PostMessageA(WM_VSCROLL, SB_BOTTOM, 0);
+				}
+				if (m_strevent == "NLU")
+				{
+					//状态错误
+					int m_nstatus = root["status"].asInt();
+					if (m_nstatus == 1)	return 0;
+					//获取intent,根据intent获取内容
+					std::string m_strIntent = root["intent"].asString();		// 访问节点
+					std::string m_strKey = root["param"].toStyledString();
+
+					//Json::Value Obj = root["param"].toStyledString();
+
+					//CString m_strTemp;
+					//int m_nCount = root["param"]["count"].asInt();
+					//int m_nPrice = root["param"]["price"].asInt();
+
+					//bool isObject = root["param"].isObject();	//true
+					//bool isArray = root["param"].isArray();		//false
+					
+					/*
+					if (m_strIntent == "chat&chat")
+					{
+						m_strIntent = "聊天";
+						m_strKey = root["param"]["answerText"].asString();		// 访问节点
+					}
+
+					if (m_strIntent == "guide&guide")
+					{
+						m_strIntent = "向导";
+						std::string m_strslots = root["param"]["slots"].asString();		// 访问节点
+						if (reader.parse(m_strslots, root))
+						{
+							Json::Value arrayObj = root["destination"];
+							for (unsigned int i = 0; i < arrayObj.size(); i++)
+							{
+								if (!arrayObj[i].isMember("value"))
+								continue;
+								m_strKey = arrayObj[i]["value"].asString();
+								break;
+							}
+						}
+					}
+					
+					if (m_strIntent == "tell_me_why&common")
+					{
+						m_strIntent = "智能语音咨询";
+						m_strKey = root["param"]["answerText"].asString();		// 访问节点
+					}
+
+					if (m_strIntent == "metro_search&transfer_route")
+					{
+						m_strIntent = "购票";
+						std::string m_strslots = root["param"]["slots"].asString();		// 访问节点
+						if (reader.parse(m_strslots, root))
+						{
+							Json::Value arrayObj = root["terminal_station"];
+							for (unsigned int i = 0; i < arrayObj.size(); i++)
+							{
+								if (!arrayObj[i].isMember("value"))
+									continue;
+								m_strKey = arrayObj[i]["value"].asString();
+								break;
+							}
+						}
+					}
+					if (m_strIntent == "metro_search")
+					{
+						m_strIntent = "购票";
+						const Json::Value m_StationArray = root["param"]["station"];
+						std::string m_strCode;
+						int m_nDistance;
+						std::string m_strTarget;
+						for (unsigned int i = 0; i < m_StationArray.size(); i++)
+						{
+							m_strCode = m_StationArray[i]["code"].asString();		// 访问节点
+							m_strTemp += "code:";
+							m_strTemp += m_strCode.c_str();
+							m_strTemp += "\n";
+							m_nDistance = m_StationArray[i]["distance"].asInt();
+							CString temp;
+							temp.Format("distance:%d \n", m_nDistance);
+							m_strTemp += temp;
+							m_strTarget = m_StationArray[i]["poi"].asString();
+							m_strTemp += "target:";
+							m_strTemp += m_strTarget.c_str();
+							m_strTemp += "\n";
+							
+						}
+					}
+					*/
+					//显示意图
+					m_strResultShow = m_strIntent.c_str();
+					m_strResultShow += ("\r\n");
+					//m_richedit_rx_intent.SetFont(&font);
+					m_strResultShow.Insert(0, m_strTime);
+					m_richedit_rx_intent.SetSel(-1, -1);
+					m_richedit_rx_intent.ReplaceSel(m_strResultShow, 0);
+					m_richedit_rx_intent.PostMessageA(WM_VSCROLL, SB_BOTTOM, 0);
+					
+					//显示关键值
+					m_strResultShow = m_strKey.c_str();
+					m_strResultShow += ("\r\n");
+					//m_richeditctrl_rx_value.SetFont(&font);
+					//m_strResultShow += m_strTemp;
+					m_strResultShow.Insert(0, m_strTime);
+					m_richeditctrl_rx_value.SetSel(-1, -1);
+					m_richeditctrl_rx_value.ReplaceSel(m_strResultShow, 0);
+					m_richeditctrl_rx_value.PostMessageA(WM_VSCROLL, SB_BOTTOM, 0);
+					
+				}
+				/*
+				if (m_strevent == "Input")
+				{
+				//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
+				m_strResultShow = _T("\r\n");
+				m_richeditctrl_result.SetSel(-1, -1);
+				m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+				m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+				}
+				if (m_strevent == "OnInput")
+				{
+				//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
+				m_strResultShow = _T("\r\n");
+				m_richeditctrl_result.SetSel(-1, -1);
+				m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+				m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+				}
+				if (m_strevent == "Query")
+				{
+				//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
+				m_strResultShow = _T("\r\n");
+				m_richeditctrl_result.SetSel(-1, -1);
+				m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+				m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+				}
+				if (m_strevent == "OnQueryResult")
+				{
+				//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
+				m_strResultShow = _T("\r\n");
+				m_richeditctrl_result.SetSel(-1, -1);
+				m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+				m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+				}
+				if (m_strevent == "Report")
+				{
+				//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
+				m_strResultShow = _T("\r\n");
+				m_richeditctrl_result.SetSel(-1, -1);
+				m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+				m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+				}
+				*/
+			}
+
+			m_strshow += m_temp;
+			m_richeditctrl_rx.SetSel(-1, -1);
+			m_richeditctrl_rx.ReplaceSel(m_strshow, 0);
+			m_richeditctrl_rx.PostMessageA(WM_VSCROLL, SB_BOTTOM, 0);
+		}
+		}
+
+		m_bDealFinish = true;
+	free(out_stream);
+
+# if 0
 	// VC++默认使用ANSI，故取第一个参数为CP_ACP
 	DWORD dBufSize = MultiByteToWideChar(CP_UTF8, 0, sBuf, nBufSize, NULL, 0);
 	printf("需要wchar_t %u 个\n", dBufSize);
@@ -473,6 +825,7 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 	wmemset(dBuf, 0, dBufSize);
 	int nRet = MultiByteToWideChar(CP_UTF8, 0, sBuf, nBufSize, dBuf, dBufSize);
 	dBuf[dBufSize] = '\0';
+	
 	//m_stroutUTF8 = (std::string)dBuf;
 	if (nRet <= 0)
 	{
@@ -495,10 +848,10 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 		}
 	}
 	else
+
 	{
 		//转换成功 开始解析json串
 		//const char* str = "{\"uploadid\": \"UP000000\",\"code\": 100,\"msg\": \"\",\"files\": \"\"}";
-
 		m_temp.Format(_T("%s"), dBuf);
 		//wchar_t* p = szAllData.GetBuffer(szAllData.GetLength());
 		DWORD dwNum = WideCharToMultiByte(CP_OEMCP, NULL, dBuf, -1, NULL, 0, NULL, FALSE);
@@ -506,6 +859,7 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 		psText = new char[dwNum];
 		//WideCharToMultiByte的再次运用，进行转换
 		WideCharToMultiByte(CP_OEMCP, NULL, dBuf, -1, psText, dwNum, NULL, FALSE);
+		
 		//std::string赋值
 		std::string m_str = psText; //大功告成
 		//psText的清除
@@ -531,7 +885,7 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 			if (m_strevent == "OnWakeup")
 			{
 				m_edit_wakeup.SetFont(&font);
-				m_edit_wakeup.SetWindowTextW(_T("已检测到人脸"));
+				m_edit_wakeup.SetWindowTextA(("已检测到人脸"));
 				/*
 				m_strResultShow = _T("检测到人脸\r\n");
 				m_richeditctrl_result.SetFont(&font);
@@ -543,7 +897,7 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 			if (m_strevent == "OnSleep")
 			{
 				m_edit_wakeup.SetFont(&font);
-				m_edit_wakeup.SetWindowTextW(_T("未检测到人脸"));
+				m_edit_wakeup.SetWindowTextA(("未检测到人脸"));
 				/*
 				m_strResultShow = _T("未检测到人脸\r\n");
 				m_richeditctrl_result.SetFont(&font);
@@ -555,7 +909,7 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 			if (m_strevent == "ASR")
 			{
 				//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
-				
+
 				std::string m_strtext = root["param"]["text"].asString();  // 访问节点
 				int m_nfinish = root["param"]["finish"].asInt();
 				//不管是否识别完成全部显示
@@ -564,8 +918,8 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 				m_strResultShow.Insert(0, m_strTime);
 				m_richeditctrl_result.SetSel(-1, -1);
 				m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
-				m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
-
+				//m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+				m_richeditctrl_result.PostMessageA(WM_VSCROLL, SB_BOTTOM, 0);
 			}
 			if (m_strevent == "NLU")
 			{
@@ -578,25 +932,25 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 				/*
 				if (m_strIntent == "chat&chat")
 				{
-					m_strIntent = "聊天";
-					m_strKey = root["param"]["answerText"].asString();		// 访问节点
+				m_strIntent = "聊天";
+				m_strKey = root["param"]["answerText"].asString();		// 访问节点
 
 				}
 				if (m_strIntent == "guide&guide")
 				{
-					m_strIntent = "向导";
-					std::string m_strslots = root["param"]["slots"].asString();		// 访问节点
-					if (reader.parse(m_strslots, root))
-					{
-						Json::Value arrayObj = root["destination"];
-						for (unsigned int i = 0; i < arrayObj.size(); i++)
-						{
-							if (!arrayObj[i].isMember("value"))
-								continue;
-							m_strKey = arrayObj[i]["value"].asString();
-							break;
-						}
-					}
+				m_strIntent = "向导";
+				std::string m_strslots = root["param"]["slots"].asString();		// 访问节点
+				if (reader.parse(m_strslots, root))
+				{
+				Json::Value arrayObj = root["destination"];
+				for (unsigned int i = 0; i < arrayObj.size(); i++)
+				{
+				if (!arrayObj[i].isMember("value"))
+				continue;
+				m_strKey = arrayObj[i]["value"].asString();
+				break;
+				}
+				}
 				}
 				*/
 				if (m_strIntent == "tell_me_why&common")
@@ -629,7 +983,7 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 				m_strResultShow.Insert(0, m_strTime);
 				m_richedit_rx_intent.SetSel(-1, -1);
 				m_richedit_rx_intent.ReplaceSel(m_strResultShow, 0);
-				m_richedit_rx_intent.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+				m_richedit_rx_intent.PostMessageA(WM_VSCROLL, SB_BOTTOM, 0);
 
 				//显示关键值
 				m_strResultShow = m_strKey.c_str();
@@ -638,56 +992,57 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 				m_strResultShow.Insert(0, m_strTime);
 				m_richeditctrl_rx_value.SetSel(-1, -1);
 				m_richeditctrl_rx_value.ReplaceSel(m_strResultShow, 0);
-				m_richeditctrl_rx_value.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+				m_richeditctrl_rx_value.PostMessageA(WM_VSCROLL, SB_BOTTOM, 0);
 
 			}
 			/*
 			if (m_strevent == "Input")
 			{
-				//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
-				m_strResultShow = _T("\r\n");
-				m_richeditctrl_result.SetSel(-1, -1);
-				m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
-				m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+			//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
+			m_strResultShow = _T("\r\n");
+			m_richeditctrl_result.SetSel(-1, -1);
+			m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+			m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
 			}
 			if (m_strevent == "OnInput")
 			{
-				//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
-				m_strResultShow = _T("\r\n");
-				m_richeditctrl_result.SetSel(-1, -1);
-				m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
-				m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+			//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
+			m_strResultShow = _T("\r\n");
+			m_richeditctrl_result.SetSel(-1, -1);
+			m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+			m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
 			}
 			if (m_strevent == "Query")
 			{
-				//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
-				m_strResultShow = _T("\r\n");
-				m_richeditctrl_result.SetSel(-1, -1);
-				m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
-				m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+			//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
+			m_strResultShow = _T("\r\n");
+			m_richeditctrl_result.SetSel(-1, -1);
+			m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+			m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
 			}
 			if (m_strevent == "OnQueryResult")
 			{
-				//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
-				m_strResultShow = _T("\r\n");
-				m_richeditctrl_result.SetSel(-1, -1);
-				m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
-				m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+			//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
+			m_strResultShow = _T("\r\n");
+			m_richeditctrl_result.SetSel(-1, -1);
+			m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+			m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
 			}
 			if (m_strevent == "Report")
 			{
-				//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
-				m_strResultShow = _T("\r\n");
-				m_richeditctrl_result.SetSel(-1, -1);
-				m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
-				m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+			//m_edit_wakeup.SetWindowTextW(_T("已睡眠"));
+			m_strResultShow = _T("\r\n");
+			m_richeditctrl_result.SetSel(-1, -1);
+			m_richeditctrl_result.ReplaceSel(m_strResultShow, 0);
+			m_richeditctrl_result.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
 			}
 			*/
 		}
+
 		m_strshow += m_temp;
 		m_richeditctrl_rx.SetSel(-1, -1);
 		m_richeditctrl_rx.ReplaceSel(m_strshow, 0);
-		m_richeditctrl_rx.PostMessageW(WM_VSCROLL, SB_BOTTOM, 0);
+		m_richeditctrl_rx.PostMessageA(WM_VSCROLL, SB_BOTTOM, 0);
 
 	}
 
@@ -698,141 +1053,13 @@ LRESULT CNLUDlg::OnThreadRXMessage(WPARAM wParam, LPARAM lParam)
 	/*
 	for (int i = 0; i < wParam; i++)
 	{
-		m_temp.Format(_T("%02X"), m_byteRXFrame[i]);
-		m_strshow += m_temp;
+	m_temp.Format(_T("%02X"), m_byteRXFrame[i]);
+	m_strshow += m_temp;
 	}
 	*/
 
+#endif
 
-	return 0;
-
-
-
-
-
-
-
-
-
-	//m_richeditctrl_rx.SetWindowTextW(m_strshow);
-	//判断缓冲区内是否够一帧数据
-		/*
-	for (int m_nc = QueueLenth(q); m_nc >= 24; m_nc--)
-	{
-		//出队 检查是否收到0xfc
-		if (DeQueue(q, m_byteFrame[0]) != 0)
-		{
-			AfxMessageBox(_T("读缓冲区失败"));
-		}
-
-		if (m_byteFrame[0] == 0xfc)
-		{
-			m_strshow = "FC";
-			for (int j = 1; j < 24; j++)
-			{
-				DeQueue(q, m_byteFrame[j]);
-				m_temp.Format("%02X", m_byteFrame[j]);
-				m_strshow += m_temp;
-			}
-			//命令解析
-			m_strshow += "\r\n";
-			m_nc -= 23;
-			//保存接收数据
-			WriteRecoder(m_strshow);
-			m_CRX.ReplaceSel(m_strshow);
-			m_CRX.PostMessage(WM_VSCROLL, SB_BOTTOM, 0);
-			CString m_str;
-			//命令处理
-			if ((m_byteFrame[0] == 0xfc) && (m_byteFrame[0x01] == 0x0c) && (m_byteFrame[0x05] == 0x70))
-			{
-				//准备
-				if ((m_byteFrame[0x06] == 0xee) && (m_byteFrame[0x07] == 0xff))
-				{
-					//准备完成开始发送数据
-					KillTimer(1);
-					//开始计时
-					SetTimer(2, 1000, NULL);
-					m_ncountersecond = 0;
-					m_strcountersecond.Format("%d 秒", m_ncountersecond);
-					UpdateData(FALSE);
-					Sleep(5);
-					pSendThread = AfxBeginThread(ThreadSendBin, (LPVOID)1);
-					m_str = "准备!";
-					m_str.Insert(0, GetSystemTime());
-					m_str += "\r\n";
-					m_Cricheditshowmsg.ReplaceSel(m_str);
-					m_Cricheditshowmsg.PostMessage(WM_VSCROLL, SB_BOTTOM, 0);
-					//SendMSGtoSendThread();
-				}
-				//校验成功
-				if ((m_byteFrame[0x06] == 0xdd) && (m_byteFrame[0x07] == 0xdd))
-				{
-					m_str = "数据校验成功!";
-					m_str += "\r\n";
-					m_str.Insert(0, GetSystemTime());
-					m_Cricheditshowmsg.ReplaceSel(m_str);
-					m_Cricheditshowmsg.PostMessage(WM_VSCROLL, SB_BOTTOM, 0);
-
-
-				}
-				//校验失败
-				if ((m_byteFrame[0x06] == 0x77) && (m_byteFrame[0x07] == 0x77))
-				{
-					m_str = "数据校验失败!";
-					m_str += "\r\n";
-					m_str.Insert(0, GetSystemTime());
-					m_Cricheditshowmsg.ReplaceSel(m_str);
-					m_Cricheditshowmsg.PostMessage(WM_VSCROLL, SB_BOTTOM, 0);
-				}
-				//数据地址超硬件出地址范围 溢出
-				if ((m_byteFrame[0x06] == 0xbb) && (m_byteFrame[0x07] == 0xbb)&(m_byteFrame[0x08] == 0xbb) && (m_byteFrame[0x09] == 0xbb))
-				{
-					m_str = "数据溢出!";
-					m_str += "\r\n";
-					m_str.Insert(0, GetSystemTime());
-					m_Cricheditshowmsg.ReplaceSel(m_str);
-					m_Cricheditshowmsg.PostMessage(WM_VSCROLL, SB_BOTTOM, 0);
-				}
-				//重新发送
-				if ((m_byteFrame[0x06] == 0xee) && (m_byteFrame[0x07] == 0xee)&(m_byteFrame[0x08] == 0xee) && (m_byteFrame[0x09] == 0xee))
-				{
-					//给发送线程发送消息，并告知重发地址
-					SendMSGtoSendThread();
-					m_str = "重发数据!";
-					m_str += "\r\n";
-					m_str.Insert(0, GetSystemTime());
-					m_Cricheditshowmsg.ReplaceSel(m_str);
-					m_Cricheditshowmsg.PostMessage(WM_VSCROLL, SB_BOTTOM, 0);
-					CString m_strresend;
-					m_str.Format("%02X", m_byteFrame[0x0a]);
-					m_strresend = m_str;
-					m_str.Format("%02X", m_byteFrame[0x0b]);
-					m_strresend += m_str;
-					m_str.Format("%02X", m_byteFrame[0x0c]);
-					m_strresend += m_str;
-					m_str.Format("%02X", m_byteFrame[0x0d]);
-					m_strresend += m_str;
-					m_strresend += "\r\n";
-					m_strresend.Insert(0, "重发地址:");
-					m_Cricheditshowmsg.ReplaceSel(m_strresend);
-					m_Cricheditshowmsg.PostMessage(WM_VSCROLL, SB_BOTTOM, 0);
-				}
-			}
-
-		}
-
-	if (m_strshow.GetLength() > 1200)
-	{
-		m_strshow.Empty();
-	}
-
-	//m_CRX.SetWindowText(m_strshow);
-	//数据总长度和有效开始位
-	//m_temp.Format("%d", wParam);
-	//m_CRXLENTH.SetWindowText(m_temp);
-	//m_temp.Format("%d",lParam);
-	//m_CRXVALUE.SetWindowText(m_temp);
-	*/
 	return 0;
 }
 
@@ -864,10 +1091,10 @@ LRESULT CNLUDlg::OnThreadTXMessage(WPARAM wParam, LPARAM lParam)
 void CNLUDlg::OnBnClickedButtonAllClear()
 {
 	// TODO:  在此添加控件通知处理程序代码
-	m_richeditctrl_rx.SetWindowTextW(_T(""));
-	m_richeditctrl_result.SetWindowTextW(_T(""));
-	m_richeditctrl_rx_value.SetWindowTextW(_T(""));
-	m_richedit_rx_intent.SetWindowTextW(_T(""));
+	m_richeditctrl_rx.SetWindowTextA("");
+	m_richeditctrl_result.SetWindowTextA("");
+	m_richeditctrl_rx_value.SetWindowTextA("");
+	m_richedit_rx_intent.SetWindowTextA("");
 
 }
 
@@ -882,6 +1109,102 @@ void CNLUDlg::OnTimer(UINT_PTR nIDEvent)
 				  OnBnClickedButtonAllClear();
 				  break;
 		}
+		case 2:
+		{
+				  OnBnClickedButtonJson();
+				  break;
+		}
 	}
 	CDialogEx::OnTimer(nIDEvent);
+}
+
+
+void CNLUDlg::OnBnClickedButtonTest()
+{
+	// TODO:  在此添加控件通知处理程序代码
+	CString m_strtemp;
+	m_richeditctrl_input.GetWindowTextA(m_strtemp);
+
+	const char *istream = m_strtemp;
+	uLong srcLen = strlen(istream) + 1;      // +1 for the trailing `\0`
+	uLong destLen = compressBound(srcLen); // this is how you should estimate size 
+	// needed for the buffer
+	unsigned char* ostream = (unsigned char*)malloc(destLen);
+	int res = compress(ostream, &destLen, (const unsigned char *)istream, srcLen);
+	// destLen is now the size of actuall buffer needed for compression
+	// you don't want to uncompress whole buffer later, just the used part
+	if (res == Z_BUF_ERROR){
+		printf("Buffer was too small!\n");
+		return ;
+	}
+	if (res == Z_MEM_ERROR){
+		printf("Not enough memory for compression!\n");
+		return ;
+	}
+
+	unsigned char *i2stream = ostream;
+	char* o2stream = (char *)malloc(BUFFERLENTH);
+	uLong destLen2 = destLen; //destLen is the actual size of the compressed buffer
+	int des = uncompress((unsigned char *)o2stream, &srcLen, i2stream, destLen2);
+	printf("%s\n", o2stream);
+
+
+
+}
+
+
+void CNLUDlg::OnBnClickedCheckHex()
+{
+	// TODO:  在此添加控件通知处理程序代码
+	m_button_check.GetCheck();
+}
+
+
+void CNLUDlg::OnBnClickedButtonJson()
+{
+	// TODO:  在此添加控件通知处理程序代码
+	// TODO: 在此添加控件通知处理程序代码
+	if (m_bConnection == FALSE)
+	{
+		AfxMessageBox(_T("串口未打开"));
+		KillTimer(2);
+		return;
+	}
+	USES_CONVERSION;
+	//获取输入字符串
+	CString m_strtemp;
+	m_unSendLenth = 0;
+	//m_richedit_inputjson.GetWindowTextW(m_strtemp);
+	m_richedit_inputjson.GetWindowTextA(m_strtemp);
+	if (!m_strtemp.IsEmpty())
+	{
+		
+		//char * pFileName = T2A(m_strtemp);
+		//m_byteWriteFrame1[m_unSendLenth++] = wcstol(m_strtemp.Left(2), NULL, 16);
+		m_bSendPackage = TRUE;
+	}
+}
+
+
+
+void CNLUDlg::OnBnClickedCheckJsonSendTimer()
+{
+	// TODO:  在此添加控件通知处理程序代码
+	if (m_bConnection == FALSE)
+	{
+		AfxMessageBox(_T("串口未打开"));
+		KillTimer(2);
+		return;
+	}
+	if (m_button_set_timer.GetCheck())
+	{
+		CString m_strtemp;
+		m_edit_json_send_time.GetWindowTextA(m_strtemp);
+		int m_nTime = strtoul(m_strtemp, NULL, 10);
+		SetTimer(2, m_nTime, NULL);
+	}
+	else
+	{
+		KillTimer(2);
+	}
 }

@@ -35,6 +35,8 @@ extern BOOL	m_bWorking;
 extern	BOOL	m_bHighSpeed;
 extern	BOOL m_bConnection;
 
+BOOL m_bDealFinish;
+
 #define MAXQSIZE BUFFERLENTH
 
 /*利用循环队列实现循环缓冲*/
@@ -224,6 +226,7 @@ BOOL comport::OpenPort(int portnumber)
 		//  帧扫描线程
 		pThreadTX = AfxBeginThread(ThreadFrameScan, 0);
 		pThreadTX->SetThreadPriority(THREAD_PRIORITY_TIME_CRITICAL);
+		m_bDealFinish = true;
 	}
 	return TRUE;
 }
@@ -358,85 +361,7 @@ UINT ThreadSendCOM(LPVOID lpParam)
 	//loop test data
 	//A5 01 04 28 00 2B 00 1F 8B 08 00 00 00 00 00 00 00 AB 56 4A 2D 4B CD 2B 51 B2 52 F2 CF 0B 4F CC 4E 2D 2D 50 AA 05 00 1E 13 7B B7 14 00 00 00 3D
 	//A5 01 04 14 00 01 00 7B 22 65 76 65 6E 74 22 3A 22 4F 6E 57 61 6B 65 75 70 22 7D 3A 
-	/*
-	int i=0;
-	m_byteWriteFrame1[i++] = 0xa5;
-	m_byteWriteFrame1[i++] = 0x01;
-	m_byteWriteFrame1[i++] = 0x04;
-	m_byteWriteFrame1[i++] = 0x14;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x01;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x7b;
-	m_byteWriteFrame1[i++] = 0x22;
-	m_byteWriteFrame1[i++] = 0x65;
-	m_byteWriteFrame1[i++] = 0x76;
-	m_byteWriteFrame1[i++] = 0x65;
-	m_byteWriteFrame1[i++] = 0x6e;
-	m_byteWriteFrame1[i++] = 0x74;
-	m_byteWriteFrame1[i++] = 0x22;
-	m_byteWriteFrame1[i++] = 0x3a;
-	m_byteWriteFrame1[i++] = 0x22;
-	m_byteWriteFrame1[i++] = 0x4f;
-	m_byteWriteFrame1[i++] = 0x6e;
-	m_byteWriteFrame1[i++] = 0x57;
-	m_byteWriteFrame1[i++] = 0x61;
-	m_byteWriteFrame1[i++] = 0x6b;
-	m_byteWriteFrame1[i++] = 0x65;
-	m_byteWriteFrame1[i++] = 0x75;
-	m_byteWriteFrame1[i++] = 0x70;
-	m_byteWriteFrame1[i++] = 0x22;
-	m_byteWriteFrame1[i++] = 0x7d;
-	m_byteWriteFrame1[i++] = 0x3a;
-	*/
 
-	/*
-	m_byteWriteFrame1[i++] = 0x28;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x2b;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x1f;
-	m_byteWriteFrame1[i++] = 0x8b;
-	m_byteWriteFrame1[i++] = 0x08;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0xab;
-	m_byteWriteFrame1[i++] = 0x56;
-	m_byteWriteFrame1[i++] = 0x4a;
-	m_byteWriteFrame1[i++] = 0x2d;
-	m_byteWriteFrame1[i++] = 0x4b;
-	m_byteWriteFrame1[i++] = 0xcd;
-	m_byteWriteFrame1[i++] = 0x2b;
-	m_byteWriteFrame1[i++] = 0x51;
-	m_byteWriteFrame1[i++] = 0xb2;
-	m_byteWriteFrame1[i++] = 0x52;
-	m_byteWriteFrame1[i++] = 0xf2;
-	m_byteWriteFrame1[i++] = 0xcf;
-	m_byteWriteFrame1[i++] = 0x0b;
-	m_byteWriteFrame1[i++] = 0x4f;
-	m_byteWriteFrame1[i++] = 0xcc;
-	m_byteWriteFrame1[i++] = 0x4e;
-	m_byteWriteFrame1[i++] = 0x2d;
-	m_byteWriteFrame1[i++] = 0x2d;
-	m_byteWriteFrame1[i++] = 0x50;
-	m_byteWriteFrame1[i++] = 0xaa;
-	m_byteWriteFrame1[i++] = 0x05;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x1e;
-	m_byteWriteFrame1[i++] = 0x13;
-	m_byteWriteFrame1[i++] = 0x7b;
-	m_byteWriteFrame1[i++] = 0xb7;
-	m_byteWriteFrame1[i++] = 0x14;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x00;
-	m_byteWriteFrame1[i++] = 0x3d;
-	*/
 	while (m_bThreadTXrunning == TRUE)
 	{
 		//发送一包数据
@@ -571,7 +496,7 @@ UINT ThreadFrameScan(LPVOID lpParam)
 {
 	while (m_bThreadFrameScanrunning == TRUE)
 	{
-		if (QueueLenth(q) < 8)	//消息最短长度
+		if ((QueueLenth(q) < 8) || (m_bDealFinish == false))	//消息最短长度
 		{
 			//Delayms(DELAYTIMES);
 			Sleep(SLEEPTIME);
@@ -623,6 +548,7 @@ UINT ThreadFrameScan(LPVOID lpParam)
 					//取出数据
 					JumpQueue(q, m_unDataLenth + 8);	//队列跳过已处理的数据，正确包
 					//ClearQueue(q);
+					m_bDealFinish = false;
 					::PostMessage(AfxGetMainWnd()->m_hWnd, WM_COM_RX, m_unDataLenth + 8, m_unDataLenth);	//数据总长度   data数据长度
 				}
 				else

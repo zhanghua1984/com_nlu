@@ -1,5 +1,16 @@
-﻿生成启动时间为 2019/7/17 17:47:58。
+﻿生成启动时间为 2019/7/19 16:50:43。
+     1>项目“D:\CMCM\com_nlu\NLU\NLU.vcxproj”在节点 2 上(Build 个目标)。
+     1>ResourceCompile:
+         C:\Program Files (x86)\Microsoft SDKs\Windows\v7.1A\bin\rc.exe /D _DEBUG /D _USING_V110_SDK71_ /l"0x0804" /IDebug\ /nologo /fo"Debug\NLU.res" NLU.rc 
+       Link:
+         D:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\link.exe /ERRORREPORT:PROMPT /OUT:"D:\CMCM\com_nlu\Debug\NLU.exe" /INCREMENTAL /NOLOGO zdll.lib json_vc71_libmtd.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /manifestinput:"D:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\Include\Manifest\dpiaware.manifest" /DEBUG /PDB:"D:\CMCM\com_nlu\Debug\NLU.pdb" /SUBSYSTEM:WINDOWS,"5.01" /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"D:\CMCM\com_nlu\Debug\NLU.lib" /MACHINE:X86 Debug\NLU.res
+         Debug\comport.obj
+         Debug\NLU.obj
+         Debug\NLUDlg.obj
+         Debug\stdafx.obj
+         NLU.vcxproj -> D:\CMCM\com_nlu\Debug\NLU.exe
+     1>已完成生成项目“D:\CMCM\com_nlu\NLU\NLU.vcxproj”(Build 个目标)的操作。
 
 生成成功。
 
-已用时间 00:00:00.02
+已用时间 00:00:00.58

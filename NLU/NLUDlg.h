@@ -6,6 +6,7 @@
 
 #include "comport.h"
 #include "afxcmn.h"
+#include "afxwin.h"
 
 // CNLUDlg 对话框
 class CNLUDlg : public CDialogEx
@@ -51,4 +52,12 @@ public:
 	CRichEditCtrl m_richeditctrl_rx_value;
 	afx_msg void OnBnClickedButtonAllClear();
 	afx_msg void OnTimer(UINT_PTR nIDEvent);
+	afx_msg void OnBnClickedButtonTest();
+	afx_msg void OnBnClickedCheckHex();
+	CButton m_button_check;
+	CRichEditCtrl m_richedit_inputjson;
+	afx_msg void OnBnClickedButtonJson();
+	CEdit m_edit_json_send_time;
+	afx_msg void OnBnClickedCheckJsonSendTimer();
+	CButton m_button_set_timer;
 };
