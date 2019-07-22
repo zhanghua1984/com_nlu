@@ -60,4 +60,7 @@ public:
 	CEdit m_edit_json_send_time;
 	afx_msg void OnBnClickedCheckJsonSendTimer();
 	CButton m_button_set_timer;
+	afx_msg void OnBnClickedCheckClearAll();
+	CButton m_buttonTimeClearAll;
+	CEdit m_edit_time_clear;
 };
