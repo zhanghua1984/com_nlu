@@ -20,7 +20,8 @@
 #define WM_COM_RX			(WM_USER+2)
 #define WM_COM_TX			(WM_USER+102) 
 #define WM_UDISPLAY_MSG		(WM_USER+103)
-
+#define WM_NETWORK_RX		(WM_USER+104)
+#define WM_SHOW_VIDEO		(WM_USER+105)
 class CNLUApp : public CWinApp
 {
 public:

@@ -27,6 +27,8 @@ public:
 	afx_msg LRESULT OnReceiveAComPort(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnThreadRXMessage(WPARAM wParam, LPARAM lParam);
 	afx_msg LRESULT OnThreadTXMessage(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnThreadNetWorkRXMessage(WPARAM wParam, LPARAM lParam);
+	afx_msg LRESULT OnThreadShowVideoMessage(WPARAM wParam, LPARAM lParam);
 // 实现
 protected:
 	HICON m_hIcon;
@@ -63,4 +65,14 @@ public:
 	afx_msg void OnBnClickedCheckClearAll();
 	CButton m_buttonTimeClearAll;
 	CEdit m_edit_time_clear;
+	CStatic m_picture_display;
+	afx_msg void OnBnClickedButtonVideoStart();
+	afx_msg void OnBnClickedButtonVideoStop();
+	afx_msg void OnBnClickedButtonCustomerServiceStart();
+	afx_msg void OnBnClickedButtonCustomServiceStop();
+	afx_msg void SendCommand(CString m_strcmd);
+
+	CRichEditCtrl m_RichEditCtrl_loginfo;
+	afx_msg void OnBnClickedButtonEnvInit();
+	CButton m_button_no_ack;
 };
